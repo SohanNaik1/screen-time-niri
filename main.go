@@ -13,6 +13,12 @@ type NiriEvent struct {
 	WindowFocusChanged *struct {
 		ID int `json:"id"`
 	} `json:"WindowFocusChanged"`
+
+	WindowsChanged *[]struct {
+		ID    int    `json:"id"`
+		Title string `json:"title"`
+		AppId string `json:"app_id"`
+	} `json:"WindowsChanged"`
 }
 
 func main() {
@@ -22,14 +28,40 @@ func main() {
 		fmt.Println("Error Connecting :", err)
 		return
 	}
-	defer conn.Close()
-
-	fmt.Fprint(conn, "\"EventStream\"\n")
 
 	var activeWindowId int
 	var startTime time.Time = time.Now()
+
 	windowStats := make(map[int]time.Duration)
+	windowNames := make(map[int]string)
+
 	scanner := bufio.NewScanner(conn)
+
+	fmt.Fprint(conn, "\"Windows\"\n")
+	if scanner.Scan() {
+		var reply struct {
+			Ok struct {
+				Windows []struct {
+					ID        int    `json:"id"`
+					AppID     string `json:"app_id"`
+					IsFocused bool   `json:"is_focused"`
+				} `json:"Windows"`
+			} `json:"Ok"`
+		}
+
+		json.Unmarshal(scanner.Bytes(), &reply)
+
+		// Now we access it through reply.Ok.Windows
+		for _, win := range reply.Ok.Windows {
+			windowNames[win.ID] = win.AppID
+			if win.IsFocused {
+				activeWindowId = win.ID
+			}
+		}
+	}
+
+	fmt.Fprint(conn, "\"EventStream\"\n")
+	defer conn.Close()
 	for scanner.Scan() {
 		line := scanner.Bytes()
 
@@ -40,10 +72,20 @@ func main() {
 			continue
 		}
 
+		if event.WindowsChanged != nil {
+			for _, win := range *event.WindowsChanged {
+				windowNames[win.ID] = win.AppId
+			}
+		}
+
 		if event.WindowFocusChanged != nil {
 			duration := time.Since(startTime)
 			windowStats[activeWindowId] += duration
-			fmt.Printf("The total time for window %d : %v \n", activeWindowId, windowStats[activeWindowId])
+			name, exists := windowNames[activeWindowId]
+			if !exists {
+				name = "unknown"
+			}
+			fmt.Printf("The total time for window %s : %v \n", name, windowStats[activeWindowId])
 			activeWindowId = event.WindowFocusChanged.ID
 			startTime = time.Now()
 		}
