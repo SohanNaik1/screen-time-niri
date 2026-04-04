@@ -2,10 +2,17 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 )
+
+type NiriEvent struct {
+	WindowFocusChanged *struct {
+		ID int `json:"id"`
+	} `json:"WindowFocusChanged"`
+}
 
 func main() {
 	socketPath := os.Getenv("NIRI_SOCKET")
@@ -20,6 +27,17 @@ func main() {
 
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
-		fmt.Println(scanner.Text())
+		line := scanner.Bytes()
+
+		var event NiriEvent
+
+		err := json.Unmarshal(line, &event)
+		if err != nil {
+			continue
+		}
+
+		if event.WindowFocusChanged != nil {
+			fmt.Printf("The focus was switched to ID : %d \n", event.WindowFocusChanged.ID)
+		}
 	}
 }
