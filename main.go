@@ -28,6 +28,7 @@ func main() {
 
 	var activeWindowId int
 	var startTime time.Time = time.Now()
+	windowStats := make(map[int]time.Duration)
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -41,7 +42,8 @@ func main() {
 
 		if event.WindowFocusChanged != nil {
 			duration := time.Since(startTime)
-			fmt.Printf("The window %d was active for : %v \n", activeWindowId, duration)
+			windowStats[activeWindowId] += duration
+			fmt.Printf("The total time for window %d : %v \n", activeWindowId, windowStats[activeWindowId])
 			activeWindowId = event.WindowFocusChanged.ID
 			startTime = time.Now()
 		}
