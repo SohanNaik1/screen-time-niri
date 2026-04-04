@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 )
 
 type NiriEvent struct {
@@ -25,6 +26,8 @@ func main() {
 
 	fmt.Fprint(conn, "\"EventStream\"\n")
 
+	var activeWindowId int
+	var startTime time.Time = time.Now()
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -37,7 +40,10 @@ func main() {
 		}
 
 		if event.WindowFocusChanged != nil {
-			fmt.Printf("The focus was switched to ID : %d \n", event.WindowFocusChanged.ID)
+			duration := time.Since(startTime)
+			fmt.Printf("The window %d was active for : %v \n", activeWindowId, duration)
+			activeWindowId = event.WindowFocusChanged.ID
+			startTime = time.Now()
 		}
 	}
 }
