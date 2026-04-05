@@ -21,21 +21,51 @@ type NiriEvent struct {
 	} `json:"WindowsChanged"`
 }
 
-func saveStats(stats map[int]time.Duration) {
-	printableStats := make(map[int]string)
-	for id, duration := range stats {
-		printableStats[id] = duration.String()
+type WindowInfo struct {
+	AppId string
+	Title string
+}
+
+type WindowRecord struct {
+	AppId    string        `json:"app_id"`
+	Title    string        `json:"title"`
+	Duration time.Duration `json:"duration"`
+}
+
+func saveStats(stats map[int]time.Duration, names map[int]WindowInfo) {
+	saveData := make(map[int]WindowRecord)
+	for id, dur := range stats {
+		info := names[id]
+		saveData[id] = WindowRecord{
+			AppId:    info.AppId,
+			Title:    info.Title,
+			Duration: dur,
+		}
 	}
-	jsonData, err := json.MarshalIndent(printableStats, "", "  ")
-	if err != nil {
-		fmt.Println("Error encoding json :", err)
-		return
-	}
-	err = os.WriteFile("stats.json", jsonData, 0644)
+	jsonData, _ := json.MarshalIndent(saveData, "", "  ")
+	err := os.WriteFile("stats.json", jsonData, 0644)
 	if err != nil {
 		fmt.Println("Error writing to the file : ", err)
 		return
 	}
+}
+
+func loadStats() map[int]time.Duration {
+	stats := make(map[int]time.Duration)
+
+	data, err := os.ReadFile("stats.json")
+	if err != nil {
+		return stats
+	}
+	// creating temporary map of int and string cause json can't read time.duration
+	var tempMap map[int]string
+	json.Unmarshal(data, &tempMap)
+
+	for id, str := range tempMap {
+		duration, _ := time.ParseDuration(str)
+		stats[id] = duration
+	}
+	return stats
 }
 
 func main() {
@@ -49,8 +79,8 @@ func main() {
 	var activeWindowId int
 	var startTime time.Time = time.Now()
 
-	windowStats := make(map[int]time.Duration)
-	windowNames := make(map[int]string)
+	windowStats := loadStats()
+	windowNames := make(map[int]WindowInfo)
 
 	scanner := bufio.NewScanner(conn)
 
@@ -61,6 +91,7 @@ func main() {
 				Windows []struct {
 					ID        int    `json:"id"`
 					AppID     string `json:"app_id"`
+					Title     string `json:title`
 					IsFocused bool   `json:"is_focused"`
 				} `json:"Windows"`
 			} `json:"Ok"`
@@ -70,7 +101,10 @@ func main() {
 
 		// Now we access it through reply.Ok.Windows
 		for _, win := range reply.Ok.Windows {
-			windowNames[win.ID] = win.AppID
+			windowNames[win.ID] = WindowInfo{
+				AppId: win.AppID,
+				Title: win.Title,
+			}
 			if win.IsFocused {
 				activeWindowId = win.ID
 			}
@@ -86,8 +120,24 @@ func main() {
 		for range ticker.C {
 			windowStats[activeWindowId] += time.Since(startTime)
 			startTime = time.Now()
-			saveStats(windowStats)
+			saveStats(windowStats, windowNames)
 			fmt.Println("--Auto saved stats--")
+		}
+	}()
+
+	go func() {
+		socketFile := "/tmp/screen-time-niri.sock"
+		os.Remove(socketFile)
+
+		l, _ := net.Listen("unix", socketFile)
+
+		for {
+			conn, _ := l.Accept()
+
+			jsonData, _ := json.Marshal(windowStats)
+			fmt.Fprintln(conn, string(jsonData))
+
+			conn.Close()
 		}
 	}()
 
@@ -103,19 +153,25 @@ func main() {
 
 		if event.WindowsChanged != nil {
 			for _, win := range *event.WindowsChanged {
-				windowNames[win.ID] = win.AppId
+				windowNames[win.ID] = WindowInfo{
+					AppId: win.AppId,
+					Title: win.Title,
+				}
 			}
 		}
 
 		if event.WindowFocusChanged != nil {
 			duration := time.Since(startTime)
 			windowStats[activeWindowId] += duration
-			saveStats(windowStats)
-			name, exists := windowNames[activeWindowId]
-			if !exists {
-				name = "unknown"
+			saveStats(windowStats, windowNames)
+			info, exists := windowNames[activeWindowId]
+			name := "unknown"
+			title := "unknown"
+			if exists {
+				name = info.AppId
+				title = info.Title
 			}
-			fmt.Printf("The total time for window %s : %v \n", name, windowStats[activeWindowId])
+			fmt.Printf("Name : %s | Title : %s | Total time : %v \n", name, title, windowStats[activeWindowId])
 			activeWindowId = event.WindowFocusChanged.ID
 			startTime = time.Now()
 		}
