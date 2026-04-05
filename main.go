@@ -126,13 +126,21 @@ func main() {
 	}()
 
 	go func() {
-		socketFile := "/tmp/screen-time-niri.sock"
+		socketFile := "/tmp/screen-time-niri-api.sock"
 		os.Remove(socketFile)
 
-		l, _ := net.Listen("unix", socketFile)
+		l, err := net.Listen("unix", socketFile)
+		if err != nil {
+			fmt.Println("Error: couldn't create socketFile. ", err)
+			return
+		}
+		fmt.Println("Sever is now listening on", socketFile)
 
 		for {
-			conn, _ := l.Accept()
+			conn, err := l.Accept()
+			if err != nil {
+				fmt.Println("SEVER ERROR: connection failed. ", err)
+			}
 
 			jsonData, _ := json.Marshal(windowStats)
 			fmt.Fprintln(conn, string(jsonData))
