@@ -22,7 +22,11 @@ type NiriEvent struct {
 }
 
 func saveStats(stats map[int]time.Duration) {
-	jsonData, err := json.MarshalIndent(stats, "", "  ")
+	printableStats := make(map[int]string)
+	for id, duration := range stats {
+		printableStats[id] = duration.String()
+	}
+	jsonData, err := json.MarshalIndent(printableStats, "", "  ")
 	if err != nil {
 		fmt.Println("Error encoding json :", err)
 		return
@@ -75,6 +79,18 @@ func main() {
 
 	fmt.Fprint(conn, "\"EventStream\"\n")
 	defer conn.Close()
+
+	ticker := time.NewTicker(30 * time.Second)
+
+	go func() {
+		for range ticker.C {
+			windowStats[activeWindowId] += time.Since(startTime)
+			startTime = time.Now()
+			saveStats(windowStats)
+			fmt.Println("--Auto saved stats--")
+		}
+	}()
+
 	for scanner.Scan() {
 		line := scanner.Bytes()
 
