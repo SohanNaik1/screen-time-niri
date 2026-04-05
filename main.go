@@ -21,6 +21,19 @@ type NiriEvent struct {
 	} `json:"WindowsChanged"`
 }
 
+func saveStats(stats map[int]time.Duration) {
+	jsonData, err := json.MarshalIndent(stats, "", "  ")
+	if err != nil {
+		fmt.Println("Error encoding json :", err)
+		return
+	}
+	err = os.WriteFile("stats.json", jsonData, 0644)
+	if err != nil {
+		fmt.Println("Error writing to the file : ", err)
+		return
+	}
+}
+
 func main() {
 	socketPath := os.Getenv("NIRI_SOCKET")
 	conn, err := net.Dial("unix", socketPath)
@@ -81,6 +94,7 @@ func main() {
 		if event.WindowFocusChanged != nil {
 			duration := time.Since(startTime)
 			windowStats[activeWindowId] += duration
+			saveStats(windowStats)
 			name, exists := windowNames[activeWindowId]
 			if !exists {
 				name = "unknown"
